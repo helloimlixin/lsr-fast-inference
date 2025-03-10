@@ -1,0 +1,17 @@
+# @package _global_.model
+name: "meta-llama/Llama-3.2-1B"
+num_labels: 0  # Disable classification head
+
+kronecker:
+  enabled: true
+  calibration: true
+  calibration_dataset: "wikitext"
+  calibration_steps: 500
+  max_candidate: 64  # Increased for calibration
+  als_iter: 15       # More iterations for accuracy
+  full_model: false  # Only calibrate attention layers
+
+lora:
+  enabled: false
+
+target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
