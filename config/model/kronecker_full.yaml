@@ -13,4 +13,6 @@ kronecker:
 
 # Disable LoRA since we're using Kronecker only
 lora:
-  enabled: false
+  enabled: true
+  rank: 8
+  alpha: 32

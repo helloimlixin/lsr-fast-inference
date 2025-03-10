@@ -21,3 +21,4 @@ greater_is_better: true
 early_stopping_patience: 2
 metric_name: "glue"
 metric_subset: "mrpc"
+fp16: true
