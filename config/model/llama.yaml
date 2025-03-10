@@ -6,12 +6,12 @@ num_labels: 2
 
 # Kronecker approximation settings
 kronecker:
-  enabled: true
-  max_candidate: 64
+  enabled: false
+  max_candidate: 32
   als_iter: 10
 
 # LoRA adaptation settings
 lora:
   enabled: true
-  rank: 4
-  alpha: 16
+  rank: 8
+  alpha: 32

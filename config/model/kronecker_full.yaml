@@ -1,0 +1,16 @@
+# @package _global_.model
+
+# Model configuration
+name: "meta-llama/Llama-3.2-1B"  # or your preferred base model
+num_labels: 2
+
+# Kronecker approximation settings
+kronecker:
+  enabled: true
+  max_candidate: 32
+  als_iter: 10
+  full_model: true  # New flag to indicate full model Kronecker replacement
+
+# Disable LoRA since we're using Kronecker only
+lora:
+  enabled: false

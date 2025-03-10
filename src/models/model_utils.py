@@ -80,6 +80,61 @@ def replace_classifier_with_kronecker(classifier, max_candidate=32, als_iter=10)
         setattr(classifier, name, new_child)
     return classifier
 
+def replace_all_linear_with_kronecker(model, max_candidate=32, als_iter=10):
+    """
+    Recursively traverse the entire model and replace all nn.Linear layers with
+    their Kronecker-approximated versions.
+
+    Args:
+        model: The model to modify.
+        max_candidate: Maximum value for the first factor in factorization.
+        als_iter: Number of alternating least squares iterations.
+
+    Returns:
+        Modified model with all possible linear layers replaced by KroneckerLinear.
+    """
+    for name, module in model.named_children():
+        # Recursively process child modules
+        new_module = replace_all_linear_with_kronecker(module, max_candidate, als_iter)
+
+        # If the current module is a linear layer, try to replace it
+        if isinstance(module, nn.Linear):
+            new_module = try_replace_linear_with_kronecker(module, max_candidate, als_iter)
+
+        setattr(model, name, new_module)
+    return model
+
+
+def get_kronecker_stats(model):
+    """
+    Get statistics about Kronecker layer replacements.
+
+    Args:
+        model: The model to analyze.
+
+    Returns:
+        Dict containing statistics about linear and Kronecker layers.
+    """
+    total_linear = 0
+    kronecker_count = 0
+    params_saved = 0
+
+    for module in model.modules():
+        if isinstance(module, (nn.Linear, KroneckerLinear)):
+            total_linear += 1
+            if isinstance(module, KroneckerLinear):
+                kronecker_count += 1
+                original_params = module.in_features * module.out_features
+                kronecker_params = module.p * module.q + module.r * module.s
+                params_saved += original_params - kronecker_params
+
+    return {
+        "total_linear_layers": total_linear,
+        "kronecker_layers": kronecker_count,
+        "replacement_ratio": kronecker_count / total_linear if total_linear > 0 else 0,
+        "parameters_saved": params_saved
+    }
+
 
 def replace_linear_with_lora(module: nn.Module, r: int, alpha: float):
     """

@@ -4,12 +4,99 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
+
+from src.models import LoRALinear
 from src.models.model_utils import (
     replace_classifier_with_kronecker,
-    replace_linear_with_lora,
+    replace_linear_with_lora, replace_all_linear_with_kronecker, get_kronecker_stats,
 )
 from src.data.data_utils import prepare_dataset
 from src.training.trainer import setup_trainer
+
+def apply_model_compression(model, cfg):
+    """
+    Apply model compression strategy (Kronecker and/or LoRA) based on configuration.
+
+    Args:
+        model: The model to modify.
+        cfg: Configuration object.
+
+    Returns:
+        Modified model and compression statistics.
+    """
+    stats = {}
+
+    if cfg.model.kronecker.enabled:
+        strategy = cfg.model.kronecker.get("strategy", "classifier")
+
+        if strategy == "full":
+            print("Applying Kronecker approximation to all linear layers...")
+            model = replace_all_linear_with_kronecker(
+                model,
+                max_candidate=cfg.model.kronecker.max_candidate,
+                als_iter=cfg.model.kronecker.als_iter
+            )
+            stats.update(get_kronecker_stats(model))
+
+        elif strategy == "classifier":
+            print("Applying Kronecker approximation to classifier only...")
+            if hasattr(model, "classifier"):
+                model.classifier = replace_classifier_with_kronecker(
+                    model.classifier,
+                    max_candidate=cfg.model.kronecker.max_candidate,
+                    als_iter=cfg.model.kronecker.als_iter
+                )
+            elif hasattr(model, "score"):
+                model.score = replace_classifier_with_kronecker(
+                    model.score,
+                    max_candidate=cfg.model.kronecker.max_candidate,
+                    als_iter=cfg.model.kronecker.als_iter
+                )
+
+    if cfg.model.lora.enabled:
+        print("Applying LoRA adaptation...")
+        replace_linear_with_lora(
+            model,
+            r=cfg.model.lora.rank,
+            alpha=cfg.model.lora.alpha
+        )
+
+    return model, stats
+
+
+def print_lora_statistics(model):
+    """
+    Print parameter reduction statistics for all LoRA layers in the model.
+
+    Args:
+        model: The PyTorch model containing LoRA layers
+    """
+    print("\n=== LoRA Parameter Reduction Statistics ===\n")
+
+    total_original_params = 0
+    total_lora_params = 0
+    total_params_saved = 0
+
+    # Find all LoRA layers
+    for name, module in model.named_modules():
+        if isinstance(module, LoRALinear):
+            stats = module.get_stats()
+            print(f"\nLayer: {name}")
+            print(str(stats))
+
+            total_original_params += stats.original_params
+            total_lora_params += stats.lora_params
+            total_params_saved += stats.params_saved
+
+    # Print total statistics
+    if total_original_params > 0:
+        total_reduction = (1 - total_lora_params / total_original_params) * 100
+        print("\n=== Overall Statistics ===")
+        print(f"Total original parameters: {total_original_params:,}")
+        print(f"Total LoRA parameters: {total_lora_params:,}")
+        print(f"Total parameters saved: {total_params_saved:,}")
+        print(f"Overall parameter reduction: {total_reduction:.2f}%")
+    print("\n" + "=" * 40 + "\n")
 
 
 def run_experiment(cfg: DictConfig):
@@ -38,37 +125,15 @@ def run_experiment(cfg: DictConfig):
         model.config.pad_token_id = tokenizer.pad_token_id
 
     # Step 1: Apply Kronecker approximation to classifier head
-    apply_kronecker_approx = False
-    if hasattr(model, "classifier") and cfg.model.kronecker.enabled:
-        print("Replacing model.classifier with Kronecker approximation...")
-        model.classifier = replace_classifier_with_kronecker(
-            model.classifier,
-            max_candidate=cfg.model.kronecker.max_candidate,
-            als_iter=cfg.model.kronecker.als_iter
-        )
-        apply_kronecker_approx = True
-    elif hasattr(model, "score") and cfg.model.kronecker.enabled:
-        print("Replacing model.score with Kronecker approximation...")
-        model.score = replace_classifier_with_kronecker(
-            model.score,
-            max_candidate=cfg.model.kronecker.max_candidate,
-            als_iter=cfg.model.kronecker.als_iter
-        )
-        apply_kronecker_approx = True
+    # Apply model compression strategy
+    model, compression_stats = apply_model_compression(model, cfg)
 
-    if not apply_kronecker_approx:
-        print("No classifier head found or Kronecker replacement disabled. Skipping.")
+    # Log compression statistics
+    if compression_stats:
+        print("\nModel Compression Statistics:")
+        for key, value in compression_stats.items():
+            print(f"{key}: {value}")
 
-    # Step 2: Apply LoRA adaptation to transformer layers
-    if hasattr(model, "model") and cfg.model.lora.enabled:
-        print("Applying LoRA adaptation to transformer linear layers...")
-        replace_linear_with_lora(
-            model.model,
-            r=cfg.model.lora.rank,
-            alpha=cfg.model.lora.alpha
-        )
-    else:
-        print("No transformer module found or LoRA disabled. Skipping.")
 
     # Prepare dataset
     tokenized_datasets, data_collator = prepare_dataset(
@@ -85,6 +150,8 @@ def run_experiment(cfg: DictConfig):
         data_collator=data_collator,
         training_args=cfg.training
     )
+
+    print_lora_statistics(model)
 
     # Start training
     print(f"Starting fine-tuning on {cfg.dataset.name}/{cfg.dataset.subset}...")

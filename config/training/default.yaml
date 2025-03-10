@@ -2,9 +2,9 @@
 
 # Default training configuration
 output_dir: "./outputs/kronecker_lora_finetune"
-num_train_epochs: 5
-per_device_train_batch_size: 8
-per_device_eval_batch_size: 8
+num_train_epochs: 3
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
 eval_strategy: "steps"
 eval_steps: 100
 save_strategy: "steps"
