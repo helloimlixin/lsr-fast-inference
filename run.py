@@ -5,7 +5,7 @@ from omegaconf import DictConfig, OmegaConf
 from src.main import run_experiment
 
 
-@hydra.main(config_path="config", config_name="config", version_base=None)
+@hydra.main(config_path="config", config_name="config.yaml", version_base=None)
 def main(cfg: DictConfig) -> None:
     """
     Main entry point for Hydra application.
@@ -13,14 +13,14 @@ def main(cfg: DictConfig) -> None:
     Args:
         cfg: Hydra configuration
     """
-    # Print resolved config for debugging
+    # Print resolved config.yaml for debugging
     print(OmegaConf.to_yaml(cfg))
 
     # Create output directory if it doesn't exist
     os.makedirs(cfg.training.output_dir, exist_ok=True)
 
     # Save configuration for reproducibility
-    with open(os.path.join(cfg.training.output_dir, "config.yaml"), "w") as f:
+    with open(os.path.join(cfg.training.output_dir, "config.yaml.yaml"), "w") as f:
         f.write(OmegaConf.to_yaml(cfg))
 
     # Run the experiment

@@ -7,14 +7,14 @@ from transformers import (
 import evaluate
 
 
-def compute_metrics(eval_pred, metric_name="glue", subset="mrpc"):
+def compute_metrics(eval_pred, metric_name="glue", subset="mrpc.yaml.yaml"):
     """
     Compute evaluation metrics for the model.
 
     Args:
         eval_pred: Tuple of model predictions and labels.
         metric_name: Name of the metric to use.
-        subset: Subset of the metric (e.g., "mrpc" for GLUE).
+        subset: Subset of the metric (e.g., "mrpc.yaml.yaml" for GLUE).
 
     Returns:
         Dictionary of metric values.
@@ -38,7 +38,7 @@ def setup_trainer(model, tokenized_datasets, data_collator, training_args):
     Returns:
         Configured Trainer.
     """
-    # Convert Hydra config to TrainingArguments
+    # Convert Hydra config.yaml to TrainingArguments
     args = TrainingArguments(
         output_dir=training_args.output_dir,
         num_train_epochs=training_args.num_train_epochs,

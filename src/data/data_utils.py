@@ -8,7 +8,7 @@ def prepare_dataset(dataset_name, subset, tokenizer, max_length=128):
 
     Args:
         dataset_name: Name of the dataset to load (e.g., "glue").
-        subset: Subset of the dataset (e.g., "mrpc").
+        subset: Subset of the dataset (e.g., "mrpc.yaml.yaml").
         tokenizer: Tokenizer for preprocessing.
         max_length: Maximum sequence length for tokenization.
 
@@ -20,7 +20,7 @@ def prepare_dataset(dataset_name, subset, tokenizer, max_length=128):
 
     def tokenize_function(examples):
         # Handle different dataset formats
-        if subset == "mrpc":
+        if subset == "mrpc.yaml.yaml":
             return tokenizer(
                 examples["sentence1"],
                 examples["sentence2"],
@@ -41,7 +41,7 @@ def prepare_dataset(dataset_name, subset, tokenizer, max_length=128):
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
     # Remove columns that are no longer needed
-    if subset == "mrpc":
+    if subset == "mrpc.yaml.yaml":
         columns_to_remove = ["sentence1", "sentence2", "idx"]
     else:
         columns_to_remove = ["text"] if "text" in dataset["train"].column_names else ["sentence"]

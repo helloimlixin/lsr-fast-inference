@@ -15,4 +15,4 @@ metric_for_best_model: "accuracy"
 greater_is_better: true
 early_stopping_patience: 2
 metric_name: "glue"
-metric_subset: "mrpc"
+metric_subset: "mrpc.yaml"

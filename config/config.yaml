@@ -2,9 +2,9 @@
 
 # Import defaults
 defaults:
-  - model: llama
-  - dataset: mrpc
-  - training: mrpc
+  - model: llama.yaml
+  - dataset: mrpc.yaml.yaml
+  - training: mrpc.yaml.yaml
   - _self_
 
 # Experiment name
