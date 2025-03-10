@@ -1,0 +1,30 @@
+# @package _global_.training
+
+output_dir: "./outputs/kronecker_lora_finetune_mrpc"
+num_train_epochs: 3
+per_device_train_batch_size: 8
+per_device_eval_batch_size: 8
+gradient_accumulation_steps: 8
+eval_strategy: "epoch"
+save_strategy: "epoch"
+logging_strategy: "steps"
+logging_steps: 50
+logging_first_step: true
+logging_dir: "./logs"
+logging_format: "text"
+tqdm_format: "epoch {n_fmt}/{total_fmt} |{bar}| {percentage:3.0f}% [{elapsed}<{remaining}]"
+learning_rate: 2.0e-06
+weight_decay: 0.01
+load_best_model_at_end: true
+metric_for_best_model: "accuracy"
+greater_is_better: true
+early_stopping_patience: 2
+metric_name: "glue"
+metric_subset: "mrpc"
+fp16: true
+gradient_checkpointing: true
+deepspeed: "ds_config.json"
+
+# DDP specific options
+ddp_find_unused_parameters: true  # Disable the warning
+ddp_bucket_cap_mb: 25
