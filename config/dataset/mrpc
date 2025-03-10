@@ -1,0 +1,6 @@
+# @package _global_.dataset
+
+# MRPC dataset configuration
+name: "glue"
+subset: "mrpc"
+max_length: 128

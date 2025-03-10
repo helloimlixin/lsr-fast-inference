@@ -1,0 +1,20 @@
+# @package _global_
+
+# Import defaults
+defaults:
+  - model: llama
+  - dataset: mrpc
+  - training: mrpc
+  - _self_
+
+# Experiment name
+experiment_name: kronecker_lora_finetune
+
+# Hydra settings
+hydra:
+  job:
+    name: ${experiment_name}
+  run:
+    dir: outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

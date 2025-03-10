@@ -1,0 +1,18 @@
+# @package _global_.training
+
+# Training configuration for MRPC
+output_dir: "./outputs/kronecker_lora_finetune_mrpc"
+num_train_epochs: 3
+per_device_train_batch_size: 16
+per_device_eval_batch_size: 16
+eval_strategy: "epoch"
+save_strategy: "epoch"
+logging_steps: 50
+learning_rate: 2e-5
+weight_decay: 0.01
+load_best_model_at_end: true
+metric_for_best_model: "accuracy"
+greater_is_better: true
+early_stopping_patience: 2
+metric_name: "glue"
+metric_subset: "mrpc"

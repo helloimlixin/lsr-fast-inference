@@ -1,0 +1,17 @@
+# @package _global_.model
+
+# Default model configuration
+name: "bert-base-uncased"
+num_labels: 2
+
+# Kronecker approximation settings
+kronecker:
+  enabled: true
+  max_candidate: 32
+  als_iter: 5
+
+# LoRA adaptation settings
+lora:
+  enabled: true
+  rank: 8
+  alpha: 32
