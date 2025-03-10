@@ -13,7 +13,7 @@ logging_first_step: true
 logging_dir: "./logs"
 logging_format: "text"
 tqdm_format: "epoch {n_fmt}/{total_fmt} |{bar}| {percentage:3.0f}% [{elapsed}<{remaining}]"
-learning_rate: 2e-5
+learning_rate: 2e-6
 weight_decay: 0.01
 load_best_model_at_end: true
 metric_for_best_model: "accuracy"
