@@ -9,7 +9,7 @@ kronecker:
   enabled: true
   max_candidate: 32
   als_iter: 10
-  full_model: true  # New flag to indicate full model Kronecker replacement
+  strategy: full
 
 # Disable LoRA since we're using Kronecker only
 lora:
