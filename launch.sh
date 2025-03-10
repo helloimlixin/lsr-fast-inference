@@ -36,7 +36,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 echo "Running with $NUM_GPUS GPUs, $THREADS_PER_GPU threads per GPU process"
 
 # Launch with torch distributed
-NCCL_DEBUG=INFO torchrun \
+torchrun \
   --nproc_per_node=$NUM_GPUS \
   run.py \
   model=kronecker_full \
