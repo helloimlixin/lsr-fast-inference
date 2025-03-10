@@ -62,13 +62,13 @@ You can override configuration values directly from the command line:
 
 ```bash
 # Use a different model
-python run.py model=default.yaml.yaml.yaml
+python run.py model=default
 
 # Change learning rate
 python run.py training.learning_rate=1e-4
 
 # Use a different dataset
-python run.py dataset=default.yaml.yaml.yaml
+python run.py dataset=default
 
 # Disable LoRA
 python run.py model.lora.enabled=false

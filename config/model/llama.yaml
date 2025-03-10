@@ -1,0 +1,17 @@
+# @package _global_.model
+
+# Model configuration
+name: "meta-llama/Llama-3.2-1B"
+num_labels: 2
+
+# Kronecker approximation settings
+kronecker:
+  enabled: true
+  max_candidate: 64
+  als_iter: 10
+
+# LoRA adaptation settings
+lora:
+  enabled: true
+  rank: 4
+  alpha: 16

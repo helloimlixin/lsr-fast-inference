@@ -7,7 +7,7 @@ from transformers import (
 import evaluate
 
 
-def compute_metrics(eval_pred, metric_name="glue", subset="mrpc.yaml.yaml"):
+def compute_metrics(eval_pred, metric_name="glue", subset="mrpc"):
     """
     Compute evaluation metrics for the model.
 
@@ -44,7 +44,7 @@ def setup_trainer(model, tokenized_datasets, data_collator, training_args):
         num_train_epochs=training_args.num_train_epochs,
         per_device_train_batch_size=training_args.per_device_train_batch_size,
         per_device_eval_batch_size=training_args.per_device_eval_batch_size,
-        evaluation_strategy=training_args.eval_strategy,
+        eval_strategy=training_args.eval_strategy,
         save_strategy=training_args.save_strategy,
         logging_steps=training_args.logging_steps,
         learning_rate=training_args.learning_rate,

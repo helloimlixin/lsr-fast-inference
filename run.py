@@ -20,7 +20,7 @@ def main(cfg: DictConfig) -> None:
     os.makedirs(cfg.training.output_dir, exist_ok=True)
 
     # Save configuration for reproducibility
-    with open(os.path.join(cfg.training.output_dir, "config.yaml.yaml"), "w") as f:
+    with open(os.path.join(cfg.training.output_dir, "config.yaml"), "w") as f:
         f.write(OmegaConf.to_yaml(cfg))
 
     # Run the experiment
