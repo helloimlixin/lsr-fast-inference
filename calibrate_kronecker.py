@@ -7,7 +7,7 @@ from transformers import (
     AutoConfig
 )
 from datasets import load_dataset
-from src.models.model_utils import replace_all_linear_with_kronecker
+from src.models.model_utils import replace_all_linear_with_kronecker, replace_linear_with_lora
 import math
 
 def calibrate_kronecker():
@@ -80,12 +80,12 @@ def calibrate_kronecker():
         eval_strategy="steps",
         eval_steps=100,
         logging_steps=10,
-        num_train_epochs=100,
+        num_train_epochs=50,
         per_device_train_batch_size=128,
         per_device_eval_batch_size=128,
         gradient_accumulation_steps=4,
-        learning_rate=5e-5,
-        weight_decay=0.001,
+        learning_rate=5e-4,
+        weight_decay=0.1,
         fp16=True,
         deepspeed="ds_config.json"
     )
@@ -100,7 +100,7 @@ def calibrate_kronecker():
     )
     
     # Run calibration
-    trainer.train()
+    trainer.train(resume_from_checkpoint=True)
 
     eval_results = trainer.evaluate()
     eval_loss = eval_results.get("eval_loss", 0.0)
