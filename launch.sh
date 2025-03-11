@@ -1,8 +1,10 @@
 #!/bin/bash
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Get number of GPUs
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
+
+# Get number of CPU cores
+NUM_CORES=$(nproc)
 
 # Calculate optimal threads per GPU process
 # Reserve 2 cores for system operations
@@ -26,17 +28,20 @@ OUTPUT_DIR="./outputs"
 CONFIG_DIR="./config"
 
 # Parse arguments
-MODE=${1:-"train"}  # train or calibrate
+MODE=${1:-"train"}  # train, calibrate or finetune
+TASK=${2:-"mrpc"}   # For finetuning: mrpc, sst2, etc.
 
 case $MODE in
   calibrate)
-    echo "Launching Kronecker calibration..."
+    echo "Launching Kronecker calibration on WikiText..."
     torchrun --nproc_per_node=$NUM_GPUS calibrate_kronecker.py \
-      model=kronecker_calibration \
-      training=calibration \
-      model.kronecker.calibration=true \
-      model.lora.enabled=false \
-      training.output_dir="$OUTPUT_DIR/kronecker_calibration"
+      --model_name=$MODEL_NAME \
+      --dataset_name="wikitext" \
+      --dataset_config="wikitext-2-raw-v1" \
+      --split="test" \
+      --max_candidate=32 \
+      --num_factors=2 \
+      --auto_factorize=True
     ;;
 
   train)
@@ -46,11 +51,24 @@ case $MODE in
       training=multi_gpu
     ;;
 
+  finetune)
+    echo "Launching finetuning on GLUE $TASK..."
+    torchrun --nproc_per_node=$NUM_GPUS run.py \
+      model=kronecker_full \
+      training=finetuning \
+      model.kronecker.use_calibrated=true \
+      model.kronecker.calibration_path="$OUTPUT_DIR/kronecker_calibration" \
+      dataset=glue_$TASK \
+      training.output_dir="$OUTPUT_DIR/finetune_$TASK"
+    ;;
+
   *)
-    echo "Usage: $0 [train|calibrate] [num_gpus]"
+    echo "Usage: $0 [train|calibrate|finetune] [task_name]"
+    echo "  - train: Run standard training"
+    echo "  - calibrate: Run Kronecker calibration on WikiText"
+    echo "  - finetune: Finetune on GLUE task (default: mrpc)"
     exit 1
     ;;
 esac
 
-# Set optimal threading
-export OMP_NUM_THREADS=$(( $(nproc) / $NUM_GPUS ))
+echo "Done!"
