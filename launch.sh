@@ -37,11 +37,7 @@ case $MODE in
     torchrun --nproc_per_node=$NUM_GPUS calibrate_kronecker.py \
       --model_name=$MODEL_NAME \
       --dataset_name="wikitext" \
-      --dataset_config="wikitext-2-raw-v1" \
-      --split="test" \
-      --max_candidate=32 \
-      --num_factors=2 \
-      --auto_factorize=True
+      --dataset_config="wikitext-2-raw-v1"
     ;;
 
   train)
