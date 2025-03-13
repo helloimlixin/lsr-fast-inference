@@ -59,9 +59,9 @@ def calibrate_kronecker(model_name="meta-llama/Llama-3.2-1B", dataset_name="wiki
     training_args = TrainingArguments(
         output_dir="./outputs/kronecker_calibration",
         eval_strategy="steps",
-        eval_steps=10,
-        logging_steps=10,
-        num_train_epochs=3,
+        eval_steps=100,
+        logging_steps=100,
+        num_train_epochs=10,
         per_device_train_batch_size=32,
         per_device_eval_batch_size=32,
         gradient_accumulation_steps=4,
@@ -86,7 +86,7 @@ def calibrate_kronecker(model_name="meta-llama/Llama-3.2-1B", dataset_name="wiki
     )
 
     # Run calibration
-    trainer.train()
+    trainer.train(resume_from_checkpoint=False)
 
     # Evaluate
     eval_results = trainer.evaluate()
