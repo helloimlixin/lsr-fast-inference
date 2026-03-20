@@ -1,17 +1,5 @@
-# @package _global_.model
+# @package _global_.dataset
 
-# Default model configuration
-name: "bert-base-uncased"
-num_labels: 2
-
-# Kronecker approximation settings
-kronecker:
-  enabled: true
-  max_candidate: 32
-  als_iter: 5
-
-# LoRA adaptation settings
-lora:
-  enabled: true
-  rank: 8
-  alpha: 32
+name: "glue"
+subset: "sst2"
+max_length: 128

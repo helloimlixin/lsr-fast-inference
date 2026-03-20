@@ -1,171 +1,181 @@
-import os
-from omegaconf import DictConfig
-from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-)
+from pathlib import Path
 
+from omegaconf import DictConfig
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+from src.data import prepare_dataset
 from src.models import LoRALinear
 from src.models.model_utils import (
+    get_kronecker_stats,
+    replace_all_linear_with_kronecker,
     replace_classifier_with_kronecker,
-    replace_linear_with_lora, replace_all_linear_with_kronecker, get_kronecker_stats,
+    replace_linear_with_lora,
 )
-from src.data.data_utils import prepare_dataset
-from src.training.trainer import setup_trainer
+from src.training import setup_trainer
 
-def apply_model_compression(model, cfg):
-    """
-    Apply model compression strategy (Kronecker and/or LoRA) based on configuration.
 
-    Args:
-        model: The model to modify.
-        cfg: Configuration object.
+CLASSIFIER_ATTRS = ("classifier", "score")
 
-    Returns:
-        Modified model and compression statistics.
-    """
+
+def _get_classifier_attr(model):
+    for attr_name in CLASSIFIER_ATTRS:
+        if hasattr(model, attr_name):
+            return attr_name
+    return None
+
+
+def _configure_tokenizer_padding(model, tokenizer):
+    if tokenizer.pad_token is not None:
+        if model.config.pad_token_id is None:
+            model.config.pad_token_id = tokenizer.pad_token_id
+        return
+
+    if tokenizer.eos_token is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+    else:
+        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        model.resize_token_embeddings(len(tokenizer))
+
+    model.config.pad_token_id = tokenizer.pad_token_id
+
+
+def apply_model_compression(model, cfg: DictConfig):
+    """Apply the configured Kronecker and LoRA transforms."""
     stats = {}
+    kronecker_cfg = cfg.model.kronecker
+    kronecker_kwargs = {
+        "max_candidate": kronecker_cfg.max_candidate,
+        "als_iter": kronecker_cfg.als_iter,
+        "factorization_objective": kronecker_cfg.get("factorization_objective", "balanced"),
+        "tile_multiple": kronecker_cfg.get("tile_multiple", 16),
+        "min_factor_size": kronecker_cfg.get("min_factor_size", 32),
+        "implementation": kronecker_cfg.get("implementation", "gemm"),
+    }
 
-    if cfg.model.kronecker.enabled:
-        strategy = cfg.model.kronecker.get("strategy", "classifier")
+    if kronecker_cfg.enabled:
+        strategy = kronecker_cfg.get("strategy", "classifier")
 
         if strategy == "full":
             print("Applying Kronecker approximation to all linear layers...")
             model = replace_all_linear_with_kronecker(
                 model,
-                max_candidate=cfg.model.kronecker.max_candidate,
-                als_iter=cfg.model.kronecker.als_iter
+                target_modules=kronecker_cfg.get("target_modules"),
+                **kronecker_kwargs
             )
             stats.update(get_kronecker_stats(model))
-
         elif strategy == "classifier":
-            print("Applying Kronecker approximation to classifier only...")
-            if hasattr(model, "classifier"):
-                model.classifier = replace_classifier_with_kronecker(
-                    model.classifier,
-                    max_candidate=cfg.model.kronecker.max_candidate,
-                    als_iter=cfg.model.kronecker.als_iter
+            classifier_attr = _get_classifier_attr(model)
+            if classifier_attr is None:
+                print("Skipping Kronecker approximation: no classifier head found.")
+            else:
+                print("Applying Kronecker approximation to classifier only...")
+                classifier = getattr(model, classifier_attr)
+                setattr(
+                    model,
+                    classifier_attr,
+                    replace_classifier_with_kronecker(
+                        classifier,
+                        **kronecker_kwargs
+                    ),
                 )
-            elif hasattr(model, "score"):
-                model.score = replace_classifier_with_kronecker(
-                    model.score,
-                    max_candidate=cfg.model.kronecker.max_candidate,
-                    als_iter=cfg.model.kronecker.als_iter
-                )
+                stats.update(get_kronecker_stats(getattr(model, classifier_attr)))
+        else:
+            raise ValueError("Unsupported Kronecker strategy: {}".format(strategy))
 
     if cfg.model.lora.enabled:
         print("Applying LoRA adaptation...")
         replace_linear_with_lora(
             model,
             r=cfg.model.lora.rank,
-            alpha=cfg.model.lora.alpha
+            alpha=cfg.model.lora.alpha,
         )
 
     return model, stats
 
 
 def print_lora_statistics(model):
-    """
-    Print parameter reduction statistics for all LoRA layers in the model.
+    """Print a compact summary of all LoRA layers in the model."""
+    lora_layers = [
+        (name, module.get_stats())
+        for name, module in model.named_modules()
+        if isinstance(module, LoRALinear)
+    ]
 
-    Args:
-        model: The PyTorch model containing LoRA layers
-    """
-    print("\n=== LoRA Parameter Reduction Statistics ===\n")
+    if not lora_layers:
+        return
+
+    print("\n=== LoRA Parameter Reduction Statistics ===")
 
     total_original_params = 0
     total_lora_params = 0
-    total_params_saved = 0
+    for name, stats in lora_layers:
+        total_original_params += stats.original_params
+        total_lora_params += stats.lora_params
+        print(
+            "{}: rank={}, saved={} params ({:.2f}% reduction)".format(
+                name,
+                stats.lora_rank,
+                stats.params_saved,
+                stats.reduction_percentage,
+            )
+        )
 
-    # Find all LoRA layers
-    for name, module in model.named_modules():
-        if isinstance(module, LoRALinear):
-            stats = module.get_stats()
-            print(f"\nLayer: {name}")
-            print(str(stats))
+    total_saved = total_original_params - total_lora_params
+    total_reduction = 100.0 * total_saved / total_original_params
+    print("Overall: saved {} params ({:.2f}% reduction)".format(total_saved, total_reduction))
+    print("=" * 40)
 
-            total_original_params += stats.original_params
-            total_lora_params += stats.lora_params
-            total_params_saved += stats.params_saved
 
-    # Print total statistics
-    if total_original_params > 0:
-        total_reduction = (1 - total_lora_params / total_original_params) * 100
-        print("\n=== Overall Statistics ===")
-        print(f"Total original parameters: {total_original_params:,}")
-        print(f"Total LoRA parameters: {total_lora_params:,}")
-        print(f"Total parameters saved: {total_params_saved:,}")
-        print(f"Overall parameter reduction: {total_reduction:.2f}%")
-    print("\n" + "=" * 40 + "\n")
+def _save_eval_results(output_dir, eval_results):
+    results_path = Path(output_dir) / "results.txt"
+    with results_path.open("w") as handle:
+        for key, value in sorted(eval_results.items()):
+            handle.write("{}: {}\n".format(key, value))
 
 
 def run_experiment(cfg: DictConfig):
-    """
-    Run the fine-tuning experiment with the given configuration.
-
-    Args:
-        cfg: Hydra configuration containing model, dataset, and training settings
-
-    Returns:
-        Trained model and evaluation results
-    """
-    # Load model and tokenizer
-    print(f"Loading model: {cfg.model.name}")
+    """Run the configured fine-tuning experiment."""
+    print("Loading model: {}".format(cfg.model.name))
     model = AutoModelForSequenceClassification.from_pretrained(
         cfg.model.name,
         num_labels=cfg.model.num_labels,
-        ignore_mismatched_sizes=True
+        ignore_mismatched_sizes=True,
     )
     tokenizer = AutoTokenizer.from_pretrained(cfg.model.name)
+    _configure_tokenizer_padding(model, tokenizer)
 
-    # Set up tokenizer padding
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token if tokenizer.eos_token is not None else "[PAD]"
-    if model.config.pad_token_id is None:
-        model.config.pad_token_id = tokenizer.pad_token_id
-
-    # Step 1: Apply Kronecker approximation to classifier head
-    # Apply model compression strategy
     model, compression_stats = apply_model_compression(model, cfg)
-
-    # Log compression statistics
     if compression_stats:
         print("\nModel Compression Statistics:")
-        for key, value in compression_stats.items():
-            print(f"{key}: {value}")
+        for key, value in sorted(compression_stats.items()):
+            print("{}: {}".format(key, value))
 
-
-    # Prepare dataset
     tokenized_datasets, data_collator = prepare_dataset(
         cfg.dataset.name,
         cfg.dataset.subset,
         tokenizer,
-        cfg.dataset.max_length
+        cfg.dataset.max_length,
     )
 
-    # Set up trainer
     trainer = setup_trainer(
         model=model,
         tokenized_datasets=tokenized_datasets,
         data_collator=data_collator,
-        training_args=cfg.training
+        training_args=cfg.training,
     )
 
     print_lora_statistics(model)
 
-    # Start training
-    print(f"Starting fine-tuning on {cfg.dataset.name}/{cfg.dataset.subset}...")
+    print(
+        "Starting fine-tuning on {}/{}...".format(
+            cfg.dataset.name,
+            cfg.dataset.subset,
+        )
+    )
     trainer.train()
 
-    # Evaluate
     eval_results = trainer.evaluate()
     print("Evaluation Results:")
     print(eval_results)
-
-    # Save results
-    results_path = os.path.join(cfg.training.output_dir, "results.txt")
-    with open(results_path, "w") as f:
-        for key, value in eval_results.items():
-            f.write(f"{key}: {value}\n")
-
+    _save_eval_results(cfg.training.output_dir, eval_results)
     return model, eval_results

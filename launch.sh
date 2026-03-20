@@ -1,70 +1,72 @@
 #!/bin/bash
 
-# Get number of GPUs
-NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
+set -euo pipefail
 
-# Get number of CPU cores
-NUM_CORES=$(nproc)
+num_gpus=$(nvidia-smi --list-gpus | wc -l)
+num_cores=$(nproc)
+available_cores=$(( num_cores > 2 ? num_cores - 2 : 1 ))
+threads_per_gpu=$(( available_cores / num_gpus ))
 
-# Calculate optimal threads per GPU process
-# Reserve 2 cores for system operations
-AVAILABLE_CORES=$((NUM_CORES - 2))
-THREADS_PER_GPU=$((AVAILABLE_CORES / NUM_GPUS))
-
-# Ensure at least 1 thread per process
-if [ $THREADS_PER_GPU -lt 1 ]; then
-    THREADS_PER_GPU=1
+if [ "$threads_per_gpu" -lt 1 ]; then
+    threads_per_gpu=1
 fi
 
-# Set thread-related environment variables
-export OMP_NUM_THREADS=$THREADS_PER_GPU
-export MKL_NUM_THREADS=$THREADS_PER_GPU
-export NUMEXPR_NUM_THREADS=$THREADS_PER_GPU
+export OMP_NUM_THREADS="$threads_per_gpu"
+export MKL_NUM_THREADS="$threads_per_gpu"
+export NUMEXPR_NUM_THREADS="$threads_per_gpu"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# Common defaults
-MODEL_NAME="meta-llama/Llama-3.2-1B"
-OUTPUT_DIR="./outputs"
-CONFIG_DIR="./config"
+mode=${1:-train}
+task=${2:-mrpc}
+output_dir=./outputs
+config_dir=./config
+python_bin=${PYTHON_BIN:-python3}
 
-# Parse arguments
-MODE=${1:-"train"}  # train, calibrate or finetune
-TASK=${2:-"mrpc"}   # For finetuning: mrpc, sst2, etc.
+run_distributed() {
+    "$python_bin" -m torch.distributed.run --nproc_per_node="$num_gpus" "$@"
+}
 
-case $MODE in
-  calibrate)
-    echo "Launching Kronecker calibration on WikiText..."
-    torchrun --nproc_per_node=$NUM_GPUS calibrate_kronecker.py \
-      --model_name=$MODEL_NAME \
-      --dataset_name="wikitext" \
-      --dataset_config="wikitext-2-raw-v1"
-    ;;
+case "$mode" in
+    calibrate)
+        echo "Launching Kronecker calibration on WikiText..."
+        run_distributed calibrate_kronecker.py
+        ;;
 
-  train)
-    echo "Launching standard training..."
-    torchrun --nproc_per_node=$NUM_GPUS run.py \
-      model=kronecker_full \
-      training=multi_gpu
-    ;;
+    benchmark)
+        echo "Launching dense vs Kronecker benchmark..."
+        "$python_bin" benchmark_kronecker.py \
+            --model-name=meta-llama/Llama-3.2-1B \
+            --kronecker-implementation=gemm \
+            --target-modules=q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+        ;;
 
-  finetune)
-    echo "Launching finetuning on GLUE $TASK..."
-    torchrun --nproc_per_node=$NUM_GPUS run.py \
-      model=kronecker_full \
-      training=finetuning \
-      model.kronecker.use_calibrated=true \
-      model.kronecker.calibration_path="$OUTPUT_DIR/kronecker_calibration" \
-      dataset=glue_$TASK \
-      training.output_dir="$OUTPUT_DIR/finetune_$TASK"
-    ;;
+    train)
+        echo "Launching standard training..."
+        run_distributed run.py model=kronecker_full training=multi_gpu dataset=mrpc
+        ;;
 
-  *)
-    echo "Usage: $0 [train|calibrate|finetune] [task_name]"
-    echo "  - train: Run standard training"
-    echo "  - calibrate: Run Kronecker calibration on WikiText"
-    echo "  - finetune: Finetune on GLUE task (default: mrpc)"
-    exit 1
-    ;;
+    finetune)
+        if [ ! -f "$config_dir/dataset/$task.yaml" ]; then
+            echo "Missing dataset config: $config_dir/dataset/$task.yaml"
+            exit 1
+        fi
+
+        echo "Launching finetuning on $task..."
+        run_distributed run.py \
+            model=kronecker_full \
+            training=multi_gpu \
+            dataset="$task" \
+            training.output_dir="$output_dir/finetune_$task"
+        ;;
+
+    *)
+        echo "Usage: $0 [train|calibrate|benchmark|finetune] [dataset_config]"
+        echo "  train: Run distributed training with the existing MRPC config"
+        echo "  calibrate: Run distributed Kronecker calibration"
+        echo "  benchmark: Compare dense and Kronecker LLM inference/eval runs"
+        echo "  finetune: Run distributed fine-tuning for an existing dataset config"
+        exit 1
+        ;;
 esac
 
 echo "Done!"

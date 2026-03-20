@@ -10,6 +10,10 @@ kronecker:
   max_candidate: 32  # Increased for calibration
   als_iter: 15       # More iterations for accuracy
   full_model: false  # Only calibrate attention layers
+  factorization_objective: "balanced"
+  tile_multiple: 16
+  min_factor_size: 32
+  implementation: "gemm"
 
 lora:
   enabled: false

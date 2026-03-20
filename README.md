@@ -86,6 +86,68 @@ python run.py -m training.learning_rate=1e-5,2e-5,3e-5
 python run.py -m model.lora.rank=2,4,8,16
 ```
 
+### LLM Benchmarking
+
+To compare dense and Kronecker-approximated LLM inference on CUDA-oriented layer shapes:
+
+```bash
+python benchmark_kronecker.py \
+  --model-name meta-llama/Llama-3.2-1B \
+  --dtype bf16 \
+  --factorization-objective latency \
+  --kronecker-implementation gemm \
+  --target-modules q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj \
+  --batch-sizes 1,4 \
+  --prefill-lengths 128,512 \
+  --tasks wikitext103,c4_en,hellaswag,boolq,arc_easy,arc_challenge
+```
+
+To stream the full benchmark online to Weights & Biases with comparison dashboards:
+
+```bash
+python benchmark_kronecker.py \
+  --model-name meta-llama/Llama-3.2-1B \
+  --dtype bf16 \
+  --factorization-objective latency \
+  --kronecker-implementation gemm \
+  --target-modules q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj \
+  --batch-sizes 1,4 \
+  --prefill-lengths 128,512 \
+  --tasks wikitext103,c4_en,hellaswag,boolq,arc_easy,arc_challenge \
+  --wandb-project kronecker-inference \
+  --wandb-mode online
+```
+
+The benchmark script reports:
+
+- Layer-level dense vs Kronecker latency and approximation error
+- Full-model prefill and decode throughput
+- Held-out quality on strong text and reasoning datasets
+
+When Weights & Biases logging is enabled, the run also uploads:
+
+- Raw dense, Kronecker, and comparison tables
+- Layer speedup, compression-ratio, and error scatter visualizations
+- Prefill/decode latency and throughput charts across context lengths
+- Per-task dense vs Kronecker evaluation bar charts
+- The full JSON benchmark report as a W&B artifact
+
+You can compare the old contraction path against the new CUDA-friendlier GEMM path by switching:
+
+```bash
+python benchmark_kronecker.py --kronecker-implementation einsum
+python benchmark_kronecker.py --kronecker-implementation gemm
+```
+
+Built-in evaluation tasks:
+
+- `wikitext103`: perplexity on WikiText-103 validation
+- `c4_en`: perplexity on C4 English validation
+- `hellaswag`: commonsense multiple-choice accuracy
+- `boolq`: boolean question answering accuracy
+- `arc_easy`: science QA multiple-choice accuracy
+- `arc_challenge`: harder science QA multiple-choice accuracy
+
 ## Implementation Details
 
 ### Kronecker Linear

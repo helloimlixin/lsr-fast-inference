@@ -1,0 +1,20 @@
+# @package _global_.training
+
+output_dir: "./outputs/kronecker_lora_finetune_boolq"
+num_train_epochs: 3
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+eval_strategy: "epoch"
+save_strategy: "epoch"
+logging_strategy: "steps"
+logging_steps: 100
+logging_first_step: true
+learning_rate: 2e-6
+weight_decay: 0.01
+load_best_model_at_end: true
+metric_for_best_model: "accuracy"
+greater_is_better: true
+early_stopping_patience: 2
+metric_name: "super_glue"
+metric_subset: "boolq"
+fp16: true

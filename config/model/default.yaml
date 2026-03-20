@@ -9,6 +9,12 @@ kronecker:
   enabled: true
   max_candidate: 32
   als_iter: 5
+  strategy: "classifier"
+  factorization_objective: "balanced"
+  tile_multiple: 16
+  min_factor_size: 16
+  implementation: "gemm"
+  target_modules: []
 
 # LoRA adaptation settings
 lora:

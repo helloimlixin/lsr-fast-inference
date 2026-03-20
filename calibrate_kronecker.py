@@ -1,9 +1,19 @@
-import torch
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, DataCollatorForLanguageModeling
-from datasets import load_dataset
-from src.models.model_utils import replace_all_linear_with_kronecker
+#!/usr/bin/env python3
 import math
 import logging
+
+import torch
+from datasets import load_dataset
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    DataCollatorForLanguageModeling,
+    Trainer,
+    TrainingArguments,
+)
+
+from src.models.model_utils import replace_all_linear_with_kronecker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,6 +28,10 @@ def calibrate_kronecker(model_name="meta-llama/Llama-3.2-1B", dataset_name="wiki
             "calibration": True,
             "max_candidate": 32,
             "als_iter": 15,
+            "factorization_objective": "balanced",
+            "tile_multiple": 16,
+            "min_factor_size": 32,
+            "implementation": "gemm",
         }
     })
 
@@ -25,7 +39,16 @@ def calibrate_kronecker(model_name="meta-llama/Llama-3.2-1B", dataset_name="wiki
     model = AutoModelForCausalLM.from_pretrained(model_name, config=config)
 
     # Replace linear layers with Kronecker approximation
-    model = replace_all_linear_with_kronecker(model, max_candidate=32, als_iter=15)
+    model = replace_all_linear_with_kronecker(
+        model,
+        max_candidate=32,
+        als_iter=15,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        factorization_objective="balanced",
+        tile_multiple=16,
+        min_factor_size=32,
+        implementation="gemm",
+    )
 
     # Load dataset
     dataset = load_dataset(dataset_name, dataset_config)
@@ -58,7 +81,7 @@ def calibrate_kronecker(model_name="meta-llama/Llama-3.2-1B", dataset_name="wiki
     # Training arguments
     training_args = TrainingArguments(
         output_dir="./outputs/kronecker_calibration",
-        eval_strategy="steps",
+        evaluation_strategy="steps",
         eval_steps=100,
         logging_steps=100,
         num_train_epochs=10,

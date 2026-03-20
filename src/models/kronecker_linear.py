@@ -1,27 +1,40 @@
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+
+VALID_IMPLEMENTATIONS = ("gemm", "einsum")
+
 
 class KroneckerLinear(nn.Module):
-    """
-    Approximates an nn.Linear layer using a single Kronecker product factorization:
-        W ≈ A ⊗ B.
+    """Approximate a linear layer with a single Kronecker product."""
 
-    Args:
-        in_features: Must equal q * s.
-        out_features: Must equal p * r.
-        p, q: Dimensions for factor matrix A.
-        r, s: Dimensions for factor matrix B.
-        bias: Whether to include a bias.
-    """
-    def __init__(self, in_features, out_features, p, q, r, s, bias=True):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        p,
+        q,
+        r,
+        s,
+        bias=True,
+        implementation="gemm",
+    ):
         super().__init__()
-        assert in_features == q * s, f"in_features must equal q*s (got {in_features} != {q*s})"
-        assert out_features == p * r, f"out_features must equal p*r (got {out_features} != {p*r})"
+        if in_features != q * s:
+            raise ValueError("in_features must equal q * s")
+        if out_features != p * r:
+            raise ValueError("out_features must equal p * r")
+        if implementation not in VALID_IMPLEMENTATIONS:
+            raise ValueError(
+                "implementation must be one of {}".format(VALID_IMPLEMENTATIONS)
+            )
 
         self.in_features = in_features
         self.out_features = out_features
         self.p, self.q, self.r, self.s = p, q, r, s
+        self.implementation = implementation
 
         self.A = nn.Parameter(torch.Tensor(p, q))
         self.B = nn.Parameter(torch.Tensor(r, s))
@@ -37,28 +50,63 @@ class KroneckerLinear(nn.Module):
         nn.init.kaiming_uniform_(self.A, a=math.sqrt(5))
         nn.init.kaiming_uniform_(self.B, a=math.sqrt(5))
         if self.bias is not None:
-            fan_in = self.q * self.s
-            bound = 1 / math.sqrt(fan_in)
+            bound = 1 / math.sqrt(self.in_features)
             nn.init.uniform_(self.bias, -bound, bound)
 
+    def _forward_einsum(self, x):
+        output_shape = tuple(x.shape[:-1]) + (self.out_features,)
+        x = x.reshape(-1, self.q, self.s)
+
+        intermediate = torch.einsum("bqs,rs->bqr", x, self.B)
+        return torch.einsum("pq,bqr->bpr", self.A, intermediate).reshape(output_shape)
+
+    def _forward_gemm(self, x):
+        output_shape = tuple(x.shape[:-1]) + (self.out_features,)
+        x = x.reshape(-1, self.q, self.s)
+        tokens = x.size(0)
+
+        first_stage = F.linear(
+            x.reshape(tokens * self.q, self.s),
+            self.B,
+        )
+        second_stage_input = (
+            first_stage.reshape(tokens, self.q, self.r)
+            .transpose(1, 2)
+            .contiguous()
+            .reshape(tokens * self.r, self.q)
+        )
+        second_stage = F.linear(second_stage_input, self.A)
+        return (
+            second_stage.reshape(tokens, self.r, self.p)
+            .transpose(1, 2)
+            .contiguous()
+            .reshape(output_shape)
+        )
+
     def forward(self, x):
-        orig_shape = x.shape
-        x_flat = x.view(-1, self.in_features)
-        batch_size = x_flat.size(0)
-        # Reshape input to (batch, q, s)
-        x_reshaped = x_flat.view(batch_size, self.q, self.s)
-        # Expand factors to match batch dimension.
-        A_exp = self.A.unsqueeze(0).expand(batch_size, self.p, self.q)
-        B_exp = self.B.unsqueeze(0).expand(batch_size, self.r, self.s)
-        # Compute: output = A @ (x_reshaped @ B^T)
-        temp = torch.bmm(x_reshaped, B_exp.transpose(1, 2))  # shape: (batch, q, r)
-        output = torch.bmm(A_exp, temp)  # shape: (batch, p, r)
-        output = output.view(batch_size, self.p * self.r)
+        if self.implementation == "gemm":
+            output = self._forward_gemm(x)
+        else:
+            output = self._forward_einsum(x)
+
         if self.bias is not None:
             output = output + self.bias
-        new_shape = orig_shape[:-1] + (self.p * self.r,)
-        return output.view(new_shape)
+        return output
 
     def get_equivalent_weight(self):
         """Return the full approximated weight matrix as A ⊗ B."""
         return torch.kron(self.A, self.B)
+
+    def extra_repr(self):
+        return (
+            "in_features={}, out_features={}, factors=({}, {}) x ({}, {}), bias={}, implementation={}".format(
+                self.in_features,
+                self.out_features,
+                self.p,
+                self.q,
+                self.r,
+                self.s,
+                self.bias is not None,
+                self.implementation,
+            )
+        )

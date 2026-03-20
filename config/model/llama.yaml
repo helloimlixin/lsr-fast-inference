@@ -9,6 +9,12 @@ kronecker:
   enabled: false
   max_candidate: 32
   als_iter: 10
+  strategy: "full"
+  factorization_objective: "balanced"
+  tile_multiple: 16
+  min_factor_size: 32
+  implementation: "gemm"
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
 # LoRA adaptation settings
 lora:

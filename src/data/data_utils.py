@@ -2,61 +2,70 @@ from datasets import load_dataset
 from transformers import DataCollatorWithPadding
 
 
+TEXT_PAIR_CANDIDATES = (
+    ("sentence1", "sentence2"),
+    ("premise", "hypothesis"),
+    ("question1", "question2"),
+    ("question", "sentence"),
+    ("question", "passage"),
+)
+
+
+def _infer_text_columns(column_names):
+    usable_columns = [
+        name for name in column_names
+        if name not in ("label", "labels", "idx")
+    ]
+
+    for pair in TEXT_PAIR_CANDIDATES:
+        if all(name in usable_columns for name in pair):
+            return pair
+
+    if "text" in usable_columns:
+        return ("text",)
+
+    if "sentence" in usable_columns:
+        return ("sentence",)
+
+    if len(usable_columns) >= 2:
+        return tuple(usable_columns[:2])
+
+    if usable_columns:
+        return (usable_columns[0],)
+
+    raise ValueError("Could not infer text columns from dataset schema")
+
+
 def prepare_dataset(dataset_name, subset, tokenizer, max_length=128):
-    """
-    Load and preprocess a dataset.
-
-    Args:
-        dataset_name: Name of the dataset to load (e.g., "glue").
-        subset: Subset of the dataset (e.g., "mrpc").
-        tokenizer: Tokenizer for preprocessing.
-        max_length: Maximum sequence length for tokenization.
-
-    Returns:
-        Tokenized datasets and data collator.
-    """
-    print(f"Loading dataset: {dataset_name}/{subset}")
+    """Load a dataset, tokenize it, and return a padded collator."""
+    print("Loading dataset: {}/{}".format(dataset_name, subset))
     dataset = load_dataset(dataset_name, subset)
 
+    train_split = dataset["train"]
+    label_column = "label" if "label" in train_split.column_names else "labels"
+    if label_column not in train_split.column_names:
+        raise ValueError("Dataset must contain a 'label' or 'labels' column")
+
+    text_columns = _infer_text_columns(train_split.column_names)
+
     def tokenize_function(examples):
-        # Handle different dataset formats
-        if subset == "mrpc":
-            return tokenizer(
-                examples["sentence1"],
-                examples["sentence2"],
-                truncation=True,
-                padding="max_length",
-                max_length=max_length,
-            )
-        else:
-            # Default tokenization for text classification
-            return tokenizer(
-                examples["text"] if "text" in examples else examples["sentence"],
-                truncation=True,
-                padding="max_length",
-                max_length=max_length,
-            )
+        texts = [examples[column] for column in text_columns]
+        return tokenizer(*texts, truncation=True, max_length=max_length)
 
-    # Tokenize the dataset
-    tokenized_datasets = dataset.map(tokenize_function, batched=True)
+    columns_to_remove = [
+        column for column in train_split.column_names
+        if column != label_column
+    ]
 
-    # Remove columns that are no longer needed
-    if subset == "mrpc":
-        columns_to_remove = ["sentence1", "sentence2", "idx"]
-    else:
-        columns_to_remove = ["text"] if "text" in dataset["train"].column_names else ["sentence"]
-        if "idx" in dataset["train"].column_names:
-            columns_to_remove.append("idx")
+    tokenized_datasets = dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=columns_to_remove,
+    )
 
-    tokenized_datasets = tokenized_datasets.remove_columns(columns_to_remove)
+    if label_column != "labels":
+        tokenized_datasets = tokenized_datasets.rename_column(label_column, "labels")
 
-    # Rename label column to labels (required by Trainer)
-    tokenized_datasets = tokenized_datasets.rename_column("label", "labels")
-
-    # Set format to PyTorch tensors
     tokenized_datasets.set_format("torch")
-
-    # Create data collator for dynamic padding
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
-
     return tokenized_datasets, data_collator
